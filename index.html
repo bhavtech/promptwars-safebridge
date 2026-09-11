@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>SafeBridge — Messy Input to Action</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 700px; margin: 40px auto; padding: 0 20px; background: #0f172a; color: #e2e8f0; }
+  h1 { font-size: 1.5rem; }
+  textarea { width: 100%; height: 140px; padding: 12px; border-radius: 8px; border: 1px solid #334155; background: #1e293b; color: #e2e8f0; font-size: 1rem; }
+  button { margin-top: 12px; padding: 10px 20px; background: #38bdf8; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  #output { margin-top: 24px; padding: 16px; border-radius: 8px; background: #1e293b; display: none; white-space: pre-wrap; }
+  .risk-high { border-left: 6px solid #ef4444; }
+  .risk-medium { border-left: 6px solid #f59e0b; }
+  .risk-low { border-left: 6px solid #22c55e; }
+  #error { color: #f87171; margin-top: 10px; }
+</style>
+</head>
+<body>
+
+<h1>🌉 SafeBridge</h1>
+<p>Paste a messy, unstructured report. Get a structured action plan.</p>
+
+<textarea id="input" placeholder="e.g. omg there was a car crash near the school gate, someone's bleeding, traffic is backed up, i dont know what to do..."></textarea>
+<br>
+<button id="go">Convert to Action Plan</button>
+<div id="error"></div>
+<div id="output"></div>
+
+<script>
+const API_KEY = "PASTE_YOUR_GEMINI_API_KEY_HERE";
+
+// --- THIS IS THE PROMPT — EDIT THIS SECTION WITH YOUR MENTOR ---
+const SYSTEM_PROMPT = `You are SafeBridge, an assistant that converts messy,
+unstructured real-world reports into clear, structured, actionable safety plans.
+
+INPUT: An unstructured, possibly panicked or disorganized text report of an
+emergency or safety situation.
+
+TASK: Convert it into a structured JSON response with exactly these fields:
+- "risk_level": one of "low", "medium", "high"
+- "summary": one sentence, plain language, restating what happened
+- "immediate_actions": array of 3-5 short, concrete, ordered action steps
+- "who_to_contact": array of relevant contacts (e.g. "Emergency services (911/local equivalent)", "Nearest hospital", "Family member")
+- "caveats": one short sentence noting this is not a substitute for professional emergency response
+
+RULES:
+- Output ONLY valid JSON. No markdown, no code fences, no extra text.
+- If the input is too vague to assess, set risk_level to "medium" and say so in summary.
+- Never invent specific facts (names, locations, numbers) not present in the input.
+- Keep each action step under 12 words.`;
+// --- END PROMPT SECTION ---
+
+document.getElementById("go").addEventListener("click", async () => {
+  const input = document.getElementById("input").value.trim();
+  const output = document.getElementById("output");
+  const errorEl = document.getElementById("error");
+  const btn = document.getElementById("go");
+  errorEl.textContent = "";
+  output.style.display = "none";
+
+  if (!input) {
+    errorEl.textContent = "Please enter a report first.";
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = "Thinking...";
+
+  try {
+    const res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${API_KEY}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: SYSTEM_PROMPT + "\n\nINPUT REPORT:\n" + input }] }]
+        })
+      }
+    );
+    const data = await res.json();
+    let text = data.candidates[0].content.parts[0].text;
+    text = text.replace(/```json|```/g, "").trim();
+    const parsed = JSON.parse(text);
+
+    output.className = "risk-" + parsed.risk_level;
+    output.innerHTML = `
+      <strong>Risk Level:</strong> ${parsed.risk_level.toUpperCase()}<br><br>
+      <strong>Summary:</strong> ${parsed.summary}<br><br>
+      <strong>Immediate Actions:</strong>
+      <ol>${parsed.immediate_actions.map(a => `<li>${a}</li>`).join("")}</ol>
+      <strong>Who to Contact:</strong>
+      <ul>${parsed.who_to_contact.map(c => `<li>${c}</li>`).join("")}</ul>
+      <em>${parsed.caveats}</em>
+    `;
+    output.style.display = "block";
+  } catch (err) {
+    errorEl.textContent = "Something went wrong: " + err.message;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Convert to Action Plan";
+  }
+});
+</script>
+</body>
+</html>
